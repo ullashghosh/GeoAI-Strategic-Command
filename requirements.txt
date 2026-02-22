@@ -1,0 +1,14 @@
+streamlit
+pandas
+joblib
+folium
+streamlit-folium
+geopy
+branca
+standard-imghdr
+scikit-learn
+firebase-admin
+google-generativeai
+groq
+anthropic
+python-dotenv
