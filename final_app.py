@@ -270,4 +270,5 @@ with st.container(border=True):
         st.markdown(f"**Buying Power**: {power_verdict}")
         st.caption(power_desc)
 
+
 st.markdown("*System powered by GeoAI Custom Models & Multi-LLM Orchestration.*")
