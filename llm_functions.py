@@ -33,6 +33,7 @@ Instructions:
 3. BE HELPFUL: If no data is provided in the context, use your general knowledge but mention that specific data wasn't found in the live database.
 4. TONE: Professional, objective, yet accessible. 
 5. FORMAT: Use bullet points for comparisons.
+
 You are a data analyst.
 """
 
@@ -102,5 +103,4 @@ def get_claude_response(user_query, chat_history):
         )
         return message.content[0].text
     except Exception as e:
-
         return f"Claude Error: {str(e)}"

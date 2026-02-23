@@ -43,6 +43,4 @@ def chat_completion_api():
 
 if __name__ == "__main__":
     #direct_llm_response()
-
     chat_completion_api()
-
