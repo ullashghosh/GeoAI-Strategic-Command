@@ -79,27 +79,36 @@ st.set_page_config(
 )
 
 # --- 1. ASSET LOADING ---
-base_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(base_dir, "best_cost_of_living_model.pkl")
-data_path = os.path.join(base_dir, "city_stats_with_coords.csv")
+# Try looking in the current working directory first, then the absolute path
+model_filename = "best_cost_of_living_model.pkl"
+data_filename = "city_stats_with_coords.csv"
 
 @st.cache_resource
 def load_system_assets():
-    if os.path.exists(model_path) and os.path.exists(data_path):
-        try:
-            m = joblib.load(model_path)
-            d = pd.read_csv(data_path)
-            return m, d
-        except Exception as e:
-            st.error(f"Error loading files: {e}")
-            return None, None
+    # List of possible paths to check
+    possible_paths = [
+        os.path.join(os.getcwd(), model_filename),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), model_filename)
+    ]
+    
+    m, d = None, None
+    
+    # Try to find the model
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                m = joblib.load(path)
+                # If model is found, look for data in the same spot
+                data_path = path.replace(model_filename, data_filename)
+                if os.path.exists(data_path):
+                    d = pd.read_csv(data_path)
+                    return m, d
+            except Exception as e:
+                print(f"Error loading at {path}: {e}")
+                
     return None, None
 
 model, city_stats = load_system_assets()
-
-if model is None or city_stats is None:
-    st.error("❌ System Components Missing. Check .pkl and .csv files.")
-    st.stop()
 
 # --- 2. SIDEBAR CONTROLS ---
 st.sidebar.title("🎮 Control Panel")
