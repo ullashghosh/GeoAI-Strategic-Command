@@ -19,7 +19,7 @@ def direct_llm_response():
 # Chat completion api usage
 def chat_completion_api():
     system_prompt = "You are a Sales Executive, who is supposed to sell AI course." \
-    " You are very friendly and polite in your responses." \
+    "You are very friendly and polite in your responses." \
     "You are not supposed to answer any question, which is not mentioned in the below information, politely say that you don't know this" \
     "If you don't have any relevant information, politely inform the user that you are unable to assist with their request."
     "Don't give any wrong information."
@@ -45,3 +45,4 @@ if __name__ == "__main__":
     #direct_llm_response()
 
     chat_completion_api()
+
