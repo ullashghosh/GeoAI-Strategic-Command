@@ -48,7 +48,6 @@ def fetch_live_exchange_rates():
         return {}
 
 def get_raw_usd(index_val, category, col_index=100, nyc_income=4500):
-    """Helper function enforcing the 40% Rent and 15% Groceries rule across the math engine"""
     if category == "Rent":
         return (index_val / 100) * (nyc_income * 0.40)
     elif category == "Groceries":
@@ -59,7 +58,6 @@ def get_raw_usd(index_val, category, col_index=100, nyc_income=4500):
         return (index_val / 100) * (nyc_income * 0.45)
 
 def get_local_currency(city_string, index_val, category, col_index=100, nyc_income=4500):
-    """Formats the raw USD into live local currency strings for the UI"""
     try:
         country = city_string.split(", ")[-1]
     except:
@@ -102,8 +100,9 @@ def log_interaction(user_query, city, year, prediction, responses):
                 "user_query": user_query,
                 "ai_prediction_score": float(prediction),
                 "responses": {
-                    "llama_groq": responses[0],
-                    "gemini": responses[1]
+                    "llama": responses[0],
+                    "gemini": responses[1],
+                    "deepseek": responses[2]
                 }
             }
             db.collection("consultation_logs").add(log_data)
@@ -114,7 +113,7 @@ def log_interaction(user_query, city, year, prediction, responses):
 
 # --- IMPORT EXISTING BRAINS ---
 try:
-    from llm_functions import get_response_from_openai, get_gemini_response
+    from llm_functions import get_llama_response, get_gemini_response, get_deepseek_response
 except ImportError:
     st.error("⚠️ Critical Error: 'llm_functions.py' not found.")
     st.stop()
@@ -208,12 +207,11 @@ wage_multiplier = (1 + annual_increment) ** years_ahead
 
 pred_rent = city_data['Rent Index'] * cost_multiplier
 pred_groceries = city_data['Groceries Index'] * cost_multiplier
-pred_restaurant = city_data['Restaurant Price Index'] * cost_multiplier
 pred_power = city_data['Local Purchasing Power Index'] * (wage_multiplier / cost_multiplier)
 
 future_input = pd.DataFrame({
     'Rent Index': [pred_rent], 'Groceries Index': [pred_groceries],
-    'Restaurant Price Index': [pred_restaurant], 'Local Purchasing Power Index': [pred_power]
+    'Restaurant Price Index': [city_data['Restaurant Price Index']*cost_multiplier], 'Local Purchasing Power Index': [pred_power]
 })
 final_prediction = model.predict(future_input)[0]
 
@@ -221,47 +219,25 @@ st.divider()
 
 st.info("ℹ️ **Data Note:** All Index values on this dashboard are calculated using **New York City as the global baseline (where NYC = 100)**. Budget baselines follow a strict 40% Rent and 15% Groceries allocation.")
 
-# --- CURRENT ACTUALS ---
-st.markdown(f"### 🏙️ Current Baseline: **{selected_city}** (2025 Actuals)")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Rent Index", f"{city_data['Rent Index']:.1f}")
-c1.caption(f"**Est. Local Cost:** {get_local_currency(selected_city, city_data['Rent Index'], 'Rent', nyc_income=active_nyc_income)}")
-
-c2.metric("Groceries Index", f"{city_data['Groceries Index']:.1f}")
-c2.caption(f"**Est. Local Cost:** {get_local_currency(selected_city, city_data['Groceries Index'], 'Groceries', nyc_income=active_nyc_income)}")
-
-c3.metric("Purchasing Power Index", f"{city_data['Local Purchasing Power Index']:.1f}")
-c3.caption(f"**Est. Net Salary:** {get_local_currency(selected_city, city_data['Local Purchasing Power Index'], 'Income', city_data['Cost of Living Index'], active_nyc_income)}")
-
-c4.metric("Total Cost of Living Index", f"{city_data['Cost of Living Index']:.1f}")
-c4.caption(f"**Est. Total/Month:** {get_local_currency(selected_city, city_data['Cost of Living Index'], 'Cost of Living', nyc_income=active_nyc_income)}")
-
-st.divider()
-
-# --- FORECAST METRICS ---
-st.markdown(f"### 🚀 AI Forecast for **{selected_city}** in **{prediction_year}**")
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Predicted Rent Index", f"{pred_rent:.1f}", delta=f"{(pred_rent - city_data['Rent Index']):.1f}")
-m1.caption(f"**Est. Local Cost:** {get_local_currency(selected_city, pred_rent, 'Rent', nyc_income=active_nyc_income)}")
-
-m2.metric("Predicted Groceries Index", f"{pred_groceries:.1f}", delta=f"{(pred_groceries - city_data['Groceries Index']):.1f}")
-m2.caption(f"**Est. Local Cost:** {get_local_currency(selected_city, pred_groceries, 'Groceries', nyc_income=active_nyc_income)}")
-
-m3.metric("Predicted Purchasing Power", f"{pred_power:.1f}", delta=f"{(pred_power - city_data['Local Purchasing Power Index']):.1f}")
-m3.caption(f"**Est. Net Salary:** {get_local_currency(selected_city, pred_power, 'Income', final_prediction, active_nyc_income)}")
-
-m4.metric("Predicted Cost of Living Index", f"{final_prediction:.1f}", delta=f"{(final_prediction - city_data['Cost of Living Index']):.1f}", delta_color="inverse")
-m4.caption(f"**Est. Total/Month:** {get_local_currency(selected_city, final_prediction, 'Cost of Living', nyc_income=active_nyc_income)}")
+# --- METRICS UI ---
+st.markdown(f"### 🏙️ Current Baseline (2025) & 🚀 Forecast ({prediction_year})")
+col_a, col_b = st.columns(2)
+with col_a:
+    st.metric("Current Cost of Living Index", f"{city_data['Cost of Living Index']:.1f}")
+    st.caption(f"Est. Local Total: {get_local_currency(selected_city, city_data['Cost of Living Index'], 'Cost of Living', nyc_income=active_nyc_income)}")
+with col_b:
+    st.metric("Predicted Cost of Living Index", f"{final_prediction:.1f}", delta=f"{(final_prediction - city_data['Cost of Living Index']):.1f}", delta_color="inverse")
+    st.caption(f"Est. Local Total: {get_local_currency(selected_city, final_prediction, 'Cost of Living', nyc_income=active_nyc_income)}")
 
 st.markdown("---")
 
-# --- MULTI-MODEL ANALYSIS ---
-st.subheader("🤖 Comparative AI Analysis")
-st.markdown("Ask a question to see how the two leading AI models interpret this data differently.")
+# --- MULTI-MODEL ANALYSIS (NOW 3 MODELS) ---
+st.subheader("🤖 Comparative AI Analysis (Powered by OpenRouter)")
+st.markdown("Ask a question to see how the world's leading AI models interpret this economic data.")
 
 with st.form("chat_form"):
     user_query = st.text_input("Your Question", placeholder="e.g., Is this city affordable for a student in 2026?")
-    submitted = st.form_submit_button("Get Opinions")
+    submitted = st.form_submit_button("Get 3 Expert Opinions")
 
 if submitted and user_query:
     local_curr_code = CURRENCY_MAP.get(selected_city.split(", ")[-1], ("$", "USD"))[0]
@@ -274,78 +250,55 @@ if submitted and user_query:
         f"- Estimated Net Monthly Income: {inc_str}\n"
         f"- Estimated Monthly Rent: {rent_str}\n"
         f"- Estimated Monthly General Living Costs: {col_str}\n"
-        f"CRITICAL INSTRUCTION: You MUST use these exact {local_curr_code} figures in your response to accurately answer the user. Do not use generic US Dollars unless the city uses USD.\n\n"
+        f"CRITICAL INSTRUCTION: You MUST use these exact {local_curr_code} figures in your response. Do not use generic US Dollars unless the city uses USD.\n\n"
     )
     full_query = context_str + "User Question: " + user_query
     
-    with st.spinner("Connecting to Neural Networks..."):
-        resp_1 = get_response_from_openai(full_query, [])
-        resp_2 = get_gemini_response(full_query, [])
+    with st.spinner("Orchestrating Llama, Gemini, and DeepSeek..."):
+        resp_1 = get_llama_response(full_query)
+        resp_2 = get_gemini_response(full_query)
+        resp_3 = get_deepseek_response(full_query)
 
-    is_saved = log_interaction(user_query, selected_city, prediction_year, final_prediction, [resp_1, resp_2])
+    is_saved = log_interaction(user_query, selected_city, prediction_year, final_prediction, [resp_1, resp_2, resp_3])
     if is_saved:
         st.toast("✅ Conversation Saved to Database", icon="💾")
 
-    col1, col2 = st.columns(2)
+    # 3-Column Layout for the 3 Models
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.header("Meta Llama 3")
         st.success(resp_1)
     with col2:
         st.header("Google Gemini")
         st.info(resp_2)
+    with col3:
+        st.header("DeepSeek V3")
+        st.warning(resp_3)
 
 # --- FINAL VERDICT ---
 st.divider()
 st.subheader("⚖️ The Final Verdict")
 
 raw_income = get_raw_usd(pred_power, 'Income', final_prediction, active_nyc_income)
-raw_rent = get_raw_usd(pred_rent, 'Rent', nyc_income=active_nyc_income)
 raw_col = get_raw_usd(final_prediction, 'Cost of Living', nyc_income=active_nyc_income)
-
-rent_burden = raw_rent / raw_income if raw_income > 0 else 1
 col_burden = raw_col / raw_income if raw_income > 0 else 1
-total_burden = rent_burden + col_burden
-
-# --- DYNAMIC PERCENTAGE FIX APPLIED HERE ---
-rent_pct = round(rent_burden * 100, 1)
 
 if col_burden < 0.40: col_v, col_d = "Highly Affordable 🟢", "General living costs are comfortably low."
 elif col_burden < 0.60: col_v, col_d = "Moderate 🟡", "Balanced living expenses."
-elif col_burden < 0.80: col_v, col_d = "Expensive 🔴", "Basic expenses consume most of the salary."
-else: col_v, col_d = "Severe Risk 🔴", "General expenses exceed standard income."
+else: col_v, col_d = "Expensive 🔴", "Costs consume most of the salary."
 
-if rent_burden < 0.20: rent_v, rent_d = "Very Affordable 🟢", f"Takes up {rent_pct}% of local income."
-elif rent_burden < 0.35: rent_v, rent_d = "Manageable 🟡", f"Takes up {rent_pct}% of local income."
-elif rent_burden < 0.50: rent_v, rent_d = "High 🔴", f"Takes up {rent_pct}% of local income."
-else: rent_v, rent_d = "Extreme 🔴", f"Takes up {rent_pct}% of local income (Crisis)."
-
-if total_burden < 0.60: power_v, power_d = "Excellent 🟢", "High savings potential."
-elif total_burden < 0.80: power_v, power_d = "Strong 🟢", "Comfortable buffer for savings."
-elif total_burden < 0.95: power_v, power_d = "Low 🔴", "Living paycheck to paycheck."
-else: power_v, power_d = "Deficit 🔴", "Financial deficit. Total expenses exceed income."
-
-recommendation = ""
-if total_burden < 0.50:
-    recommendation = "💎 HIDDEN GEM: High purchasing power with highly manageable local costs."
-elif total_burden > 0.90:
-    recommendation = "⚠️ HIGH RISK: Total estimated costs severely outweigh expected purchasing power."
-elif rent_burden > 0.40:
-    recommendation = "🏘️ HOUSING TRAP: General costs are okay, but housing is highly unaffordable."
-else:
-    recommendation = "✅ STABLE: Income generally balances well against costs."
+recommendation = "💎 HIDDEN GEM" if col_burden < 0.45 else "✅ STABLE" if col_burden < 0.75 else "⚠️ HIGH RISK"
 
 with st.container(border=True):
     st.markdown(f"### 🎯 Summary: {recommendation}")
     
-    est_income_str = get_local_currency(selected_city, pred_power, 'Income', final_prediction, active_nyc_income)
-    est_rent_str = get_local_currency(selected_city, pred_rent, 'Rent', nyc_income=active_nyc_income)
-    est_col_str = get_local_currency(selected_city, final_prediction, 'Cost of Living', nyc_income=active_nyc_income)
+    inc_str = get_local_currency(selected_city, pred_power, 'Income', final_prediction, active_nyc_income)
+    rent_str = get_local_currency(selected_city, pred_rent, 'Rent', nyc_income=active_nyc_income)
+    col_str = get_local_currency(selected_city, final_prediction, 'Cost of Living', nyc_income=active_nyc_income)
     
-    st.info(f"**Layman's Financial Breakdown:** In {prediction_year}, the average person taking home **{est_income_str}** will spend roughly **{est_rent_str}** on rent and **{est_col_str}** on general living expenses each month.")
+    st.info(f"**Layman's Financial Breakdown:** In {prediction_year}, the average person taking home **{inc_str}** will spend roughly **{rent_str}** on rent and **{col_str}** on general living expenses each month.")
     
-    v1, v2, v3 = st.columns(3)
-    with v1:
-        st.markdown(f"**Cost of Living**: {col_v}")
-        st.caption(col_d)
+    st.markdown(f"**Cost of Living**: {col_v}")
+    st.caption(col_d)
 
-st.markdown("*System powered by GeoAI Custom Models & Multi-LLM Orchestration.*")
+st.markdown("*System powered by GeoAI Custom Models & OpenRouter Multi-LLM Orchestration.*")

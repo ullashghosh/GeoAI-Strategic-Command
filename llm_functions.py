@@ -1,84 +1,58 @@
 import os
 from dotenv import load_dotenv
-import google.generativeai as genai
-from groq import Groq
-from city_data_manager import city_manager  # Import your new tool
+from openai import OpenAI
 
 load_dotenv()
 
-# --- Configuration ---
-# Groq: Free Llama 3.3 (Acts as OpenAI replacement)
-GROQ_MODEL = "llama-3.3-70b-versatile" 
+# --- OpenRouter Client Setup ---
+# OpenRouter brilliantly uses the standard OpenAI library format
+openrouter_key = os.getenv("OPENROUTER_API_KEY")
+if not openrouter_key:
+    print("❌ ERROR: OPENROUTER_API_KEY is missing!")
 
-# Gemini: Free Gemini 2.5 Flash
-GEMINI_MODEL = "gemini-2.5-flash"
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=openrouter_key,
+)
 
-# --- Clients ---
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-# --- NEW SYSTEM PROMPT (The "City Index" Persona) ---
+# --- The Persona ---
 SYSTEM_PROMPT = """
 You are a highly knowledgeable 'Cost of Living and Relocation Expert'.
-Your goal is to help users compare cities, understand economic differences, and plan relocations.
+Your goal is to help users compare cities, understand economic differences, and plan relocations based strictly on the data provided.
 
 Instructions:
-1. USE THE CONTEXT: You will often receive "REAL-TIME DATABASE CONTEXT" with exact numbers for cities. You MUST use these numbers in your answer. Do not hallucinate numbers if they are provided.
-2. BE ANALYTICAL: If the user asks about "New York vs London", compare their indices (Rent, Groceries, Purchasing Power).
-3. BE HELPFUL: If no data is provided in the context, use your general knowledge but mention that specific data wasn't found in the live database.
-4. TONE: Professional, objective, yet accessible. 
-5. FORMAT: Use bullet points for comparisons.
-
-You are a data analyst.
+1. USE THE CONTEXT: You will receive "REAL-TIME DATABASE CONTEXT" with exact financial numbers. You MUST use these exact formatted numbers (like ₹84,000) in your answer. 
+2. BE ANALYTICAL: Provide clear, concise insights about what the numbers mean for a person's lifestyle.
+3. TONE: Professional, objective, yet accessible. 
+4. FORMAT: Use bullet points for readability. Keep it under 150 words.
 """
 
-# --- Functions ---
-
-# ==========================================
-# 1. META LLAMA 3 (VIA GROQ)
-# ==========================================
-def get_response_from_openai(user_query, chat_history):
-    """Uses Groq (Free) to simulate OpenAI"""
+# --- The Universal Fetch Function ---
+def fetch_from_openrouter(full_query, model_id):
+    """A single unified function to call any model via OpenRouter"""
     try:
-        # 1. Fetch Real Data
-        data_context = city_manager.get_city_context(user_query)
-        full_query = f"{data_context}\n\nUser Question: {user_query}"
-
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for msg in chat_history:
-            role = "assistant" if msg['role'] == 'assistant' else "user"
-            messages.append({"role": role, "content": msg["content"]})
-        
-        messages.append({"role": "user", "content": full_query})
-
-        completion = groq_client.chat.completions.create(
-            model=GROQ_MODEL, messages=messages, temperature=0.7, max_tokens=1024
+        completion = client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": full_query}
+            ],
+            temperature=0.7,
+            max_tokens=500
         )
         return completion.choices[0].message.content
     except Exception as e:
-        return f"Groq Error: {str(e)}"
+        return f"API Error ({model_id}): {str(e)}"
 
-# ==========================================
-# 2. GOOGLE GEMINI
-# ==========================================
-def get_gemini_response(user_query, chat_history):
-    """Uses Gemini 2.5 Flash (Free Tier)"""
-    try:
-        # 1. Fetch Real Data
-        data_context = city_manager.get_city_context(user_query)
-        
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        formatted_history = []
-        for msg in chat_history:
-            role = "user" if msg['role'] == 'user' else "model"
-            formatted_history.append({"role": role, "parts": [msg["content"]]})
+# --- Model-Specific Wrapper Functions for the UI ---
+def get_llama_response(full_query):
+    # Free/Cheap routing for Llama 3.3
+    return fetch_from_openrouter(full_query, "meta-llama/llama-3.3-70b-instruct")
 
-        chat = model.start_chat(history=formatted_history)
-        
-        # Inject system prompt + data context
-        final_prompt = f"{SYSTEM_PROMPT}\n\n{data_context}\n\nUser Question: {user_query}"
-        
-        response = chat.send_message(final_prompt)
-        return response.text
-    except Exception as e:
-        return f"Gemini Error: {str(e)}"
+def get_gemini_response(full_query):
+    # Free/Cheap routing for Gemini 2.5 Flash
+    return fetch_from_openrouter(full_query, "google/gemini-2.5-flash")
+
+def get_deepseek_response(full_query):
+    # DeepSeek V3 - Highly capable, excellent for financial reasoning
+    return fetch_from_openrouter(full_query, "deepseek/deepseek-chat")
